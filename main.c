@@ -11,9 +11,18 @@
 #include <motors.h>
 #include <camera/po8030.h>
 #include <chprintf.h>
+#include <sensors/proximity.h>
+#include <leds.h>
+#include <sensors/VL53L0X/VL53L0X.h>
+#include <movement.h>
 
 #include <pi_regulator.h>
-#include <process_image.h>
+#include "process_image_mod.h"
+
+//Declaration of IR bus
+messagebus_t bus;
+MUTEX_DECL(bus_lock);
+CONDVAR_DECL(bus_condvar);
 
 void SendUint8ToComputer(uint8_t* data, uint16_t size) 
 {
@@ -53,10 +62,26 @@ int main(void)
 
 	//stars the threads for the pi regulator and the processing of the image
 	//pi_regulator_start();
+	//movement_start();
+
 	process_image_start();
+
+	messagebus_init(&bus, &bus_lock, &bus_condvar);
+	//proximity_start();
+
+	//VL53L0X_start();
+	//    int distance;
+
+
+	//int capteur2;
+	//int capteur1;
 
     /* Infinite loop. */
     while (1) {
+
+   /* 	capteur2 = get_calibrated_prox(2);
+    	capteur1 = get_calibrated_prox(1);
+    chprintf((BaseSequentialStream *)&SD3, "la dist petite est %d \n la dist grande est %d \n ", capteur2, capteur1);*/
     	//waits 1 second
         chThdSleepMilliseconds(1000);
     }
