@@ -16,7 +16,7 @@
 #include <sensors/VL53L0X/VL53L0X.h>
 #include <movement.h>
 
-#include <pi_regulator.h>
+#include <regulator.h>
 #include "process_image_mod.h"
 
 //Declaration of IR bus
@@ -62,19 +62,21 @@ int main(void)
 
 	//stars the threads for the pi regulator and the processing of the image
 	//pi_regulator_start();
-	//movement_start();
 
-	process_image_start();
+
+	//process_image_start();
 
 	messagebus_init(&bus, &bus_lock, &bus_condvar);
-	//proximity_start();
+	proximity_start();
+	VL53L0X_start();
+	//regulator_start();
+	movement_start();
 
-	//VL53L0X_start();
 	//    int distance;
-
 
 	//int capteur2;
 	//int capteur1;
+
 
     /* Infinite loop. */
     while (1) {
