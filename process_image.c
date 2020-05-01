@@ -8,9 +8,7 @@
 
 #include <process_image.h>
 
-
-static float distance_cm = 0;
-static uint16_t line_position = IMAGE_BUFFER_SIZE/2;	//middle
+static uint8_t color = NO_COLOR;
 
 //semaphore
 static BSEMAPHORE_DECL(image_ready_sem, TRUE);
@@ -19,7 +17,8 @@ static BSEMAPHORE_DECL(image_ready_sem, TRUE);
  *  Returns the line's width extracted from the image buffer given
  *  Returns 0 if line not found
  */
-uint16_t extract_line_width(uint8_t *buffer){
+
+/*uint16_t extract_line_width(uint8_t *buffer){
 
 	uint16_t i = 0, begin = 0, end = 0, width = 0;
 	uint8_t stop = 0, wrong_line = 0, line_not_found = 0;
@@ -104,14 +103,13 @@ uint16_t extract_line_width(uint8_t *buffer){
 	}else{
 		return width;
 	}
-}
+}*/
 
-uint16_t extract_line_width_green(uint8_t *buffer){
+uint16_t extract_line_width_rb(uint8_t *buffer){
 
-	uint16_t i = 0, begin = 0, end = 0, width = 0;
-	uint8_t stop = 0, wrong_line = 0, line_not_found = 0;
 	uint32_t mean = 0;
-	uint16_t low_mean = 0, high_mean = 0;
+	uint16_t high_mean = 0;
+	int sommation = 0;
 
 	//performs an average
 	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
@@ -120,30 +118,66 @@ uint16_t extract_line_width_green(uint8_t *buffer){
 
 
 	mean /= IMAGE_BUFFER_SIZE;
-	low_mean = 4*mean;
 	high_mean = 16*mean;
 
 
 	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
-			if(10*buffer[i]>high_mean){
-				buffer[i] =25;
-			}
-			else{
-				buffer[i] =0;
-			}
-
+		if(10*buffer[i] > high_mean){
+			buffer[i] = 25;
+		}
+		else{
+			buffer[i] = 0;
+		}
 	}
-	int sommation=0;
+
 	for(uint16_t i = 250 ; i < 450 ; i++){
 		sommation += buffer[i];
-		}
-	if(sommation>3800){ //180 hautes valeurs
-						return 400;
-					}
-					else{
-						return 0;
-					}
+	}
 
+	if(sommation > 2000){ //180 hautes valeurs
+		return 400;
+	}
+	else{
+		return 0;
+	}
+
+}
+
+uint16_t extract_line_width_g(uint8_t *buffer){
+
+	uint32_t mean = 0;
+	uint16_t high_mean = 0;
+	int sommation = 0;
+
+	//performs an average
+	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
+		mean += buffer[i];
+	}
+
+
+	mean /= IMAGE_BUFFER_SIZE;
+	high_mean = 16*mean;
+
+
+	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
+		if(10*buffer[i] > high_mean){
+			buffer[i] = 25;
+		}
+		else{
+			buffer[i] = 0;
+		}
+	}
+
+	for(uint16_t i = 250 ; i < 450 ; i++){
+		sommation += buffer[i];
+	}
+
+	if(sommation > 3500){ //180 hautes valeurs
+		return 400;
+	}
+	else{
+		return 0;
+	}
 }
 
 static THD_WORKING_AREA(waCaptureImage, 256);
@@ -153,10 +187,11 @@ static THD_FUNCTION(CaptureImage, arg) {
     (void)arg;
 
 	//Takes pixels 0 to IMAGE_BUFFER_SIZE of the line 10 + 11 (minimum 2 lines because reasons)
-	po8030_advanced_config(FORMAT_RGB565, 0, 10, IMAGE_BUFFER_SIZE, 2, SUBSAMPLING_X1, SUBSAMPLING_X1);
+	po8030_advanced_config(FORMAT_RGB565, 0, 350, IMAGE_BUFFER_SIZE, 2, SUBSAMPLING_X1, SUBSAMPLING_X1);
 	dcmi_enable_double_buffering();
 	dcmi_set_capture_mode(CAPTURE_ONE_SHOT);
 	dcmi_prepare();
+
 
     while(1){
         //starts a capture
@@ -179,19 +214,22 @@ static THD_FUNCTION(ProcessImage, arg) {
 	uint8_t image_r[IMAGE_BUFFER_SIZE] = {0};//red
 	uint8_t image_b[IMAGE_BUFFER_SIZE] = {0};//blue
 	uint8_t image_g[IMAGE_BUFFER_SIZE] = {0};//green
-	uint16_t lineWidth = 0;
 
 	bool send_to_computer = true;
 	uint16_t red = 0;
 	uint16_t blue = 0;
 	uint16_t green = 0;
+	uint16_t count_r = 0;
+	uint16_t count_b = 0;
+	uint16_t count_g = 0;
+	uint16_t count_w = 0;
+	int test = 0;
 
     while(1){
     	//waits until an image has been captured
         chBSemWait(&image_ready_sem);
 		//gets the pointer to the array filled with the last image in RGB565    
 		img_buff_ptr = dcmi_get_last_image_ptr();
-
 
 		for(uint16_t i = 0 ; i < (2 * IMAGE_BUFFER_SIZE) ; i+=2){
 			image_r[i/2] = ((uint8_t)img_buff_ptr[i]&0xF8)>>3; //extracts red pixels
@@ -200,11 +238,65 @@ static THD_FUNCTION(ProcessImage, arg) {
 			//image_g[i/2] = ((uint8_t)(img_buff_ptr[i]&0X07)<<3)|((uint8_t)(img_buff_ptr[i+1]&0XE0)>>5); //extract green pixels
 		}
 
-		red = extract_line_width_green(image_r);
-		blue = extract_line_width_green(image_b);
-		green = extract_line_width_green(image_g);
+		red = extract_line_width_rb(image_r);
+		blue = extract_line_width_rb(image_b);
+		green = extract_line_width_g(image_g);
 
 		chprintf((BaseSequentialStream *)&SDU1, "vert : %d, bleu : %d, le rouge : %d \r \n ", green, blue, red);
+
+		/*if(red){
+			count_r++;
+			if(count_r >= 10){
+				color = RED;
+				count_r = 0;
+				count_b = 0;
+				count_g = 0;
+				count_w = 0;
+			}
+		}
+
+		if(blue){
+			count_b++;
+			if(count_r >= 10){
+				color = BLUE;
+				count_r = 0;
+				count_b = 0;
+				count_g = 0;
+				count_w = 0;
+			}
+		}
+
+		if(green){
+			count_g++;
+			if(count_g >= 10){
+				color = GREEN;
+				count_r = 0;
+				count_b = 0;
+				count_g = 0;
+				count_w = 0;
+			}
+		}
+
+		if((!red) && (!blue) && ((green))){
+			count_w++;
+			if(count_w >= 20){
+				color = NO_COLOR;
+				count_r = 0;
+				count_b = 0;
+				count_g = 0;
+				count_w = 0;
+			}
+		}
+
+		test++;
+
+		if(test>10){
+			//chprintf((BaseSequentialStream *)&SDU1, "couleur: %d \r \n ", color);
+			test = 0;
+		}*/
+
+		//int count_r=0;
+		//int count_r=0;
 
 		//red detected
 		/*if((red>blue) && (red>green)&&(red>200)){
@@ -232,10 +324,6 @@ static THD_FUNCTION(ProcessImage, arg) {
 		//search for a line in the image and gets its width in pixels
 		//lineWidth = extract_line_width(image);
 
-		//converts the width into a distance between the robot and the camera
-		if(lineWidth){
-			distance_cm = PXTOCM/lineWidth;
-		}
 
 		if(send_to_computer){
 			//sends to the computer the image
@@ -247,12 +335,9 @@ static THD_FUNCTION(ProcessImage, arg) {
     }
 }
 
-float get_distance_cm(void){
-	return distance_cm;
-}
 
-uint16_t get_line_position(void){
-	return line_position;
+uint8_t get_color(void){
+	return color;
 }
 
 void process_image_start(void){

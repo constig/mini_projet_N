@@ -11,9 +11,7 @@
 #include <motors.h>
 #include <pi_regulator.h>
 #include <movement.h>
-#include "process_image_mod.h"
-
-//static uint8_t intersection = NO_INTERSECTION;
+#include <process_image.h>
 
 static THD_WORKING_AREA(waMovement, 256);
 static THD_FUNCTION(Movement, arg) {
@@ -22,215 +20,250 @@ static THD_FUNCTION(Movement, arg) {
     (void)arg;
 
     systime_t time;
-
-    int16_t speed_r = 500;
-	int16_t speed_l = 500;
-	int16_t speed_correction = 0;
+    int16_t speed = SPEED;
+	int16_t speed_correction = NO_CORRECTION;
 
     //declaration of variables with values of proximity sensor
     uint16_t capt_diagonal_right;
     uint16_t capt_diagonal_left;
     uint16_t capt_right;
-    uint16_t capt_front_right;
     uint16_t capt_left;
     uint16_t capt_front_TOF;
-    uint32_t start_step = 0;
-    	uint32_t current_step = 0;
 
-    	int compare1;
-	int compare2;
-	int compare3;
-	int compare4;
+    //compare distances between the wall and their goal distance to the wall for the regulator
+    int compare_right;
+    int compare_left;
+	int compare_diagonal_right;
+	int compare_diagonal_left;
 
 	uint8_t intersection = NO_INTERSECTION;
+	uint8_t color = NO_COLOR;
 
     while(1){
 
     		time = chVTGetSystemTime();
-    		speed_r = 500;
-    		speed_l = 500;
 
-        //get the values for each sensors
-        capt_front_right = get_calibrated_prox(0);
+        //gets the values for each sensors
     		capt_diagonal_right = get_calibrated_prox(1);
         capt_right = get_calibrated_prox(2);
      	capt_left = get_calibrated_prox(5);
-     	capt_front_TOF = VL53L0X_get_dist_mm();
      	capt_diagonal_left = get_calibrated_prox(6);
+     	capt_front_TOF = VL53L0X_get_dist_mm();
 
-		compare1 = capt_left - GOAL_DISTANCE;
-		compare2 = capt_right - GOAL_DISTANCE;
-		compare3 = capt_diagonal_right - GOAL_DISTANCE1;
-		compare4 = capt_diagonal_left - GOAL_DISTANCE1;
+     	//compares sides and diagonals
+     	compare_right = capt_right - GOAL_DISTANCE_S;
+     	compare_left = capt_left - GOAL_DISTANCE_S;
+		compare_diagonal_right = capt_diagonal_right - GOAL_DISTANCE_D;
+		compare_diagonal_left = capt_diagonal_left - GOAL_DISTANCE_D;
 
-
-		//computes the speed to give to the motors in function of the distance of the sensors of the robot to the wall
-
-		intersection = NO_INTERSECTION;
-		if(compare3>60){
-			if(compare1>100){
-				speed_correction = -5*compare1;
+		//regulator : computes the speed correction
+		if(compare_diagonal_right > SMALL_DIFF_DIAG){ //too close to the right wall
+			if(compare_left > SMALL_DIFF_SIDE){
+				speed_correction = -COEFF1*compare_left; //correction proportional to the difference
 			}
-			else if(compare1>300){
-				speed_correction = -200;
-			}
-			else{
-				speed_correction = -50;
-
-			}
-		}
-
-		else if(compare4>60){
-			if(compare2>100){
-				speed_correction = 5*compare2;
-			}
-			else if(compare2>300){
-				speed_correction = 200;
+			else if(compare_left > LARGE_DIFF_SIDE){
+				speed_correction = -LARGE_CORRECTION;
 			}
 			else{
-				speed_correction = 50;
-
+				speed_correction = -SMALL_CORRECTION;
 			}
 		}
 
-		else{ //good position (in interval (-200, 40) (small interval))
-				speed_correction = 0;
+		else if(compare_diagonal_left > SMALL_DIFF_DIAG){ //too close to the left wall
+			if(compare_right > SMALL_DIFF_SIDE){
+				speed_correction = COEFF1*compare_right;
+			}
+			else if(compare_right > LARGE_DIFF_SIDE){
+				speed_correction = LARGE_CORRECTION;
+			}
+			else{
+				speed_correction = SMALL_CORRECTION;
+			}
 		}
 
-		if((capt_front_TOF<130)&&(capt_front_TOF>30)){
-			speed_r = capt_front_TOF*2;
-			speed_l = capt_front_TOF*2;
-			speed_correction = 0;
+		else{  //good position
+			speed_correction = NO_CORRECTION;
 		}
 
-		if((capt_front_TOF<=60) && (capt_right<150) && (capt_left>250)){//only choice is right
+
+		//detection of a wall and its color (white=wall, color = traffic sign)
+		if((capt_front_TOF < MID_DIST_TOF) && (capt_front_TOF > MINI_DIST_TOF)){
+			speed = COEFF2*capt_front_TOF;
+			speed_correction = NO_CORRECTION;
+			//color = get_color();
+		}
+
+		if((capt_front_TOF <= SMALL_DIST_TOF) && (capt_right < WALL_FAR) && (capt_left > WALL_CLOSE)){//only choice is right
 			intersection = INTERSECTION_R;
 		}
 
-		if((capt_front_TOF<=60) && (capt_right>250) && (capt_left<150) ){ //only choice is left
+		if((capt_front_TOF <= SMALL_DIST_TOF) && (capt_right > WALL_CLOSE) && (capt_left < WALL_FAR)){ //only choice is left
 			intersection = INTERSECTION_L;
 		}
 
-		if((capt_front_TOF<=60) && (capt_right>250) && (capt_left>250) ){//turn back
-			intersection = INTERSECTION_RETURN;
-			set_front_led(1);
+		if((capt_front_TOF <= SMALL_DIST_TOF) && (capt_right > WALL_CLOSE) && (capt_left > WALL_CLOSE)){//wall (continue or turn back)
+				intersection = WALL_COLOR;
 		}
 
-		if((capt_front_TOF<=60)&&(capt_right<150) && (capt_left<150) ){//choice between left and right (choose right !)
+		if((capt_front_TOF <= SMALL_DIST_TOF) && (capt_right < WALL_FAR) && (capt_left < WALL_FAR)){//choice between left and right (choose right !)
 			intersection = INTERSECTION_RL;
 		}
 
 
-		else if((capt_front_TOF>150) && (capt_right<150) && (capt_left>250) && (capt_diagonal_left>200) ){// choice between front and right (choose right)
+		else if((capt_front_TOF > LARGE_DIST_TOF) && (capt_right < WALL_FAR) && (capt_left > WALL_CLOSE) && (capt_diagonal_left > WALL_CLOSE_DIAG)){// choice between front and right (choose right)
 			intersection = INTERSECTION_RF;
 
 		}
 
-		else if((capt_front_TOF>150) && (capt_right>250)&& (capt_left<150) && (capt_diagonal_right>200) ){//choice between front and left (choose front!)
+		else if((capt_front_TOF > LARGE_DIST_TOF) && (capt_right > WALL_CLOSE) && (capt_left < WALL_FAR) && (capt_diagonal_right > WALL_CLOSE_DIAG)){//choice between front and left (choose front!)
 			intersection = INTERSECTION_FL;
 		}
 
-		else if((capt_front_TOF>150) && (capt_left<150)&& (capt_right<150) ){//choice between left, right, front (choose right!)
-			set_body_led(1);
-			/*start_step = right_motor_get_pos();
-			current_step = right_motor_get_pos();
-			right_motor_set_speed(500);
-			left_motor_set_speed(500);
-			while(current_step-start_step <= 300){
-				current_step = right_motor_get_pos();
-			}
-			right_motor_set_speed(400);
-			left_motor_set_speed(-100);
-			while(current_step-start_step <= 850){
-				current_step = right_motor_get_pos();
-			}*/
+		else if((capt_front_TOF > LARGE_DIST_TOF) && (capt_left < WALL_FAR) && (capt_right < WALL_FAR)){//choice between left, right, front (choose right!)
 			intersection = INTERSECTION_RFL;
 		}
 
 
+		//regulator if no intersection
 		if(intersection == NO_INTERSECTION){
-			right_motor_set_speed(speed_r - speed_correction);
-			left_motor_set_speed(speed_l +  speed_correction);
+				right_motor_set_speed(speed - speed_correction);
+				left_motor_set_speed(speed +  speed_correction);
 		}
 
+		//choices at the intersections
 		else if(intersection == INTERSECTION_R){ //only choice is right
-			right_motor_set_speed(-200);
-			left_motor_set_speed(400);
+			right_motor_set_speed(-SPEED1);
+			left_motor_set_speed(SPEED3);
 			chThdSleepUntilWindowed(time, time + MS2ST(1000));
-			right_motor_set_speed(400);
-			left_motor_set_speed(400);
+			right_motor_set_speed(SPEED3);
+			left_motor_set_speed(SPEED3);
 			chThdSleepUntilWindowed(time, time + MS2ST(2000));
 			intersection = NO_INTERSECTION;
+			color = NO_COLOR;
 		}
 
 		else if(intersection == INTERSECTION_L){ //only choice is left
-			right_motor_set_speed(400);
-			left_motor_set_speed(-200);
+			right_motor_set_speed(SPEED3);
+			left_motor_set_speed(-SPEED1);
 			chThdSleepUntilWindowed(time, time + MS2ST(1000));
-			right_motor_set_speed(400);
-			left_motor_set_speed(400);
+			right_motor_set_speed(SPEED3);
+			left_motor_set_speed(SPEED3);
 			chThdSleepUntilWindowed(time, time + MS2ST(2000));
 			intersection = NO_INTERSECTION;
+			color = NO_COLOR;
 		}
 
-		else if(intersection == INTERSECTION_RETURN){ //return
-			right_motor_set_speed(300);
-			left_motor_set_speed(-300);
-			chThdSleepUntilWindowed(time, time + MS2ST(2000));
-			intersection = NO_INTERSECTION;
-			set_front_led(0);
+		else if(intersection == WALL_COLOR){ //obstacle
+			if(color){ //traffic sign
+				if(color == RED){ //stop sign : stops for 2sec
+					right_motor_set_speed(SPEED0);
+					left_motor_set_speed(SPEED0);
+					chThdSleepUntilWindowed(time, time + MS2ST(2000));
+					right_motor_set_speed(SPEED3);
+					left_motor_set_speed(SPEED3);
+					chThdSleepUntilWindowed(time, time + MS2ST(5000));
+					color = NO_COLOR;
+				}
+				else{ //other colors:continues and memorizes the color
+					right_motor_set_speed(SPEED3);
+					left_motor_set_speed(SPEED3);
+					chThdSleepUntilWindowed(time, time + MS2ST(3000));
+				}
+			}
+			else{ //if white return
+				right_motor_set_speed(SPEED2);
+				left_motor_set_speed(-SPEED2);
+				chThdSleepUntilWindowed(time, time + MS2ST(2000));
+				intersection = NO_INTERSECTION;
+			}
 		}
 
 		else if(intersection == INTERSECTION_RL){ //choice between right and left (right by default)
-			right_motor_set_speed(-200);
-			left_motor_set_speed(400);
-			chThdSleepUntilWindowed(time, time + MS2ST(1000));
-			right_motor_set_speed(400);
-			left_motor_set_speed(400);
+			if(color == BLUE){ //goes left
+				right_motor_set_speed(SPEED3);
+				left_motor_set_speed(-SPEED1);
+				chThdSleepUntilWindowed(time, time + MS2ST(1000));
+			}
+			else{ //if no instruction or false instruction : goes right
+				right_motor_set_speed(-SPEED1);
+				left_motor_set_speed(SPEED3);
+				chThdSleepUntilWindowed(time, time + MS2ST(1000));
+			}
+			right_motor_set_speed(SPEED3);
+			left_motor_set_speed(SPEED3);
 			chThdSleepUntilWindowed(time, time + MS2ST(2000));
 			intersection = NO_INTERSECTION;
+			color = NO_COLOR;
 		}
 
 		else if(intersection == INTERSECTION_RF){ //choice between right and front (right by default)
-			right_motor_set_speed(200);
-			left_motor_set_speed(200);
+			right_motor_set_speed(SPEED1);
+			left_motor_set_speed(SPEED1);
 			chThdSleepUntilWindowed(time, time + MS2ST(700));
-			right_motor_set_speed(-200);
-			left_motor_set_speed(400);
-			chThdSleepUntilWindowed(time, time + MS2ST(1700));
-			right_motor_set_speed(400);
-			left_motor_set_speed(400);
+
+			if(color == GREEN){ //goes front
+				right_motor_set_speed(SPEED3);
+				left_motor_set_speed(SPEED3);
+				chThdSleepUntilWindowed(time, time + MS2ST(1700));
+			}
+			else{
+				right_motor_set_speed(-SPEED1);
+				left_motor_set_speed(SPEED3);
+				chThdSleepUntilWindowed(time, time + MS2ST(1700));
+			}
+			right_motor_set_speed(SPEED3);
+			left_motor_set_speed(SPEED3);
 			chThdSleepUntilWindowed(time, time + MS2ST(3000));
 			intersection = NO_INTERSECTION;
+			color = NO_COLOR;
 		}
 
-		else if(intersection == INTERSECTION_FL){ ////choice between front and left (front by default)
-			right_motor_set_speed(200);
-			left_motor_set_speed(200);
+		else if(intersection == INTERSECTION_FL){ //choice between front and left (front by default)
+			right_motor_set_speed(SPEED1);
+			left_motor_set_speed(SPEED1);
 			chThdSleepUntilWindowed(time, time + MS2ST(700));
-			right_motor_set_speed(400);
-			left_motor_set_speed(400);
-			chThdSleepUntilWindowed(time, time + MS2ST(1700));
-			right_motor_set_speed(400);
-			left_motor_set_speed(400);
+			if(color == BLUE){ //goes left
+				right_motor_set_speed(SPEED3);
+				left_motor_set_speed(-SPEED1);
+				chThdSleepUntilWindowed(time, time + MS2ST(1700));
+			}
+			else{
+				right_motor_set_speed(SPEED3);
+				left_motor_set_speed(SPEED3);
+				chThdSleepUntilWindowed(time, time + MS2ST(1700));
+			}
+			right_motor_set_speed(SPEED3);
+			left_motor_set_speed(SPEED3);
 			chThdSleepUntilWindowed(time, time + MS2ST(3000));
 			intersection = NO_INTERSECTION;
+			color = NO_COLOR;
 		}
 
 		else if(intersection == INTERSECTION_RFL){ ////choice between right, front and left (right by default)
-			right_motor_set_speed(200);
-			left_motor_set_speed(200);
+			right_motor_set_speed(SPEED1);
+			left_motor_set_speed(SPEED1);
 			chThdSleepUntilWindowed(time, time + MS2ST(700));
-			right_motor_set_speed(-200);
-			left_motor_set_speed(400);
-			chThdSleepUntilWindowed(time, time + MS2ST(1700));
-			right_motor_set_speed(400);
-			left_motor_set_speed(400);
+			if(color == BLUE){ //goes left
+				right_motor_set_speed(SPEED3);
+				left_motor_set_speed(-SPEED1);
+				chThdSleepUntilWindowed(time, time + MS2ST(1700));
+			}
+			else if(color == GREEN){ //goes front
+				right_motor_set_speed(SPEED3);
+				left_motor_set_speed(SPEED3);
+				chThdSleepUntilWindowed(time, time + MS2ST(1700));
+			}
+			else{ //goes right
+				right_motor_set_speed(-SPEED1);
+				left_motor_set_speed(SPEED3);
+				chThdSleepUntilWindowed(time, time + MS2ST(1700));
+			}
+			right_motor_set_speed(SPEED3);
+			left_motor_set_speed(SPEED3);
 			chThdSleepUntilWindowed(time, time + MS2ST(3000));
 			intersection = NO_INTERSECTION;
-			set_body_led(0);
+			color = NO_COLOR;
 		}
-
 
     }
 		chThdSleepUntilWindowed(time, time + MS2ST(10)); //100Hz
