@@ -57,6 +57,8 @@ int main(void)
     //starts the camera
     dcmi_start();
 	po8030_start();
+	po8030_set_awb(0);
+	po8030_set_contrast(1);
 	//inits the motors
 	motors_init();
 

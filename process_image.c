@@ -105,11 +105,13 @@ static BSEMAPHORE_DECL(image_ready_sem, TRUE);
 	}
 }*/
 
-uint16_t extract_line_width_rb(uint8_t *buffer){
+uint16_t extract_line_width_b(uint8_t *buffer){
 
 	uint32_t mean = 0;
 	uint16_t high_mean = 0;
 	int sommation = 0;
+	int sommation_s = 0; //sum of the sides
+
 
 	//performs an average
 	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
@@ -118,7 +120,7 @@ uint16_t extract_line_width_rb(uint8_t *buffer){
 
 
 	mean /= IMAGE_BUFFER_SIZE;
-	high_mean = 16*mean;
+	high_mean = 14*mean;
 
 
 	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
@@ -134,13 +136,65 @@ uint16_t extract_line_width_rb(uint8_t *buffer){
 		sommation += buffer[i];
 	}
 
-	if(sommation > 2000){ //180 hautes valeurs
+	for(uint16_t i = 0 ; i < 250 ; i++){
+		sommation_s += buffer[i];
+	}
+	for(uint16_t i = 450 ; i < IMAGE_BUFFER_SIZE; i++){
+		sommation_s += buffer[i];
+	}
+
+	if((sommation > 3500) && (sommation_s < 4000)){ //180 hautes valeurs
 		return 400;
 	}
 	else{
 		return 0;
 	}
+}
 
+uint16_t extract_line_width_r(uint8_t *buffer){
+
+	uint32_t mean = 0;
+	uint16_t high_mean = 0;
+	int sommation = 0;
+	int sommation_s = 0; //sum of the sides
+
+
+	//performs an average
+	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
+		mean += buffer[i];
+	}
+
+
+	mean /= IMAGE_BUFFER_SIZE;
+	high_mean = 13*mean;
+
+
+	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
+		if(10*buffer[i] > high_mean){
+			buffer[i] = 25;
+		}
+		else{
+			buffer[i] = 0;
+		}
+	}
+
+	for(uint16_t i = 250 ; i < 450 ; i++){
+		sommation += buffer[i];
+	}
+
+	for(uint16_t i = 0 ; i < 250 ; i++){
+		sommation_s += buffer[i];
+	}
+	for(uint16_t i = 450 ; i < IMAGE_BUFFER_SIZE; i++){
+		sommation_s += buffer[i];
+	}
+
+	if((sommation > 3500) && (sommation_s < 4000)){ //180 hautes valeurs
+		return 400;
+	}
+	else{
+		return 0;
+	}
 }
 
 uint16_t extract_line_width_g(uint8_t *buffer){
@@ -148,6 +202,7 @@ uint16_t extract_line_width_g(uint8_t *buffer){
 	uint32_t mean = 0;
 	uint16_t high_mean = 0;
 	int sommation = 0;
+	int sommation_s = 0;
 
 	//performs an average
 	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
@@ -156,7 +211,7 @@ uint16_t extract_line_width_g(uint8_t *buffer){
 
 
 	mean /= IMAGE_BUFFER_SIZE;
-	high_mean = 16*mean;
+	high_mean = 12*mean;
 
 
 	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
@@ -172,7 +227,14 @@ uint16_t extract_line_width_g(uint8_t *buffer){
 		sommation += buffer[i];
 	}
 
-	if(sommation > 3500){ //180 hautes valeurs
+	for(uint16_t i = 0 ; i < 250 ; i++){
+		sommation_s += buffer[i];
+	}
+	for(uint16_t i = 450 ; i < IMAGE_BUFFER_SIZE; i++){
+		sommation_s += buffer[i];
+	}
+
+	if((sommation > 1500) && (sommation_s < 5000)){ //180 hautes valeurs
 		return 400;
 	}
 	else{
@@ -238,13 +300,13 @@ static THD_FUNCTION(ProcessImage, arg) {
 			//image_g[i/2] = ((uint8_t)(img_buff_ptr[i]&0X07)<<3)|((uint8_t)(img_buff_ptr[i+1]&0XE0)>>5); //extract green pixels
 		}
 
-		red = extract_line_width_rb(image_r);
-		blue = extract_line_width_rb(image_b);
+		red = extract_line_width_r(image_r);
+		blue = extract_line_width_b(image_b);
 		green = extract_line_width_g(image_g);
 
-		chprintf((BaseSequentialStream *)&SDU1, "vert : %d, bleu : %d, le rouge : %d \r \n ", green, blue, red);
+		//chprintf((BaseSequentialStream *)&SDU1, "vert : %d, bleu : %d, le rouge : %d \r \n ", green, blue, red);
 
-		/*if(red){
+		if(red){
 			count_r++;
 			if(count_r >= 10){
 				color = RED;
@@ -257,7 +319,7 @@ static THD_FUNCTION(ProcessImage, arg) {
 
 		if(blue){
 			count_b++;
-			if(count_r >= 10){
+			if(count_b >= 10){
 				color = BLUE;
 				count_r = 0;
 				count_b = 0;
@@ -277,9 +339,9 @@ static THD_FUNCTION(ProcessImage, arg) {
 			}
 		}
 
-		if((!red) && (!blue) && ((green))){
+		if((!red) && (!blue) && ((!green))){
 			count_w++;
-			if(count_w >= 20){
+			if(count_w >= 10){
 				color = NO_COLOR;
 				count_r = 0;
 				count_b = 0;
@@ -290,10 +352,10 @@ static THD_FUNCTION(ProcessImage, arg) {
 
 		test++;
 
-		if(test>10){
-			//chprintf((BaseSequentialStream *)&SDU1, "couleur: %d \r \n ", color);
+		if(test>20){
+			chprintf((BaseSequentialStream *)&SDU1, "couleur: %d \r \n ", color);
 			test = 0;
-		}*/
+		}
 
 		//int count_r=0;
 		//int count_r=0;
@@ -325,12 +387,12 @@ static THD_FUNCTION(ProcessImage, arg) {
 		//lineWidth = extract_line_width(image);
 
 
-		if(send_to_computer){
+		/*if(send_to_computer){
 			//sends to the computer the image
-			SendUint8ToComputer(image_g, IMAGE_BUFFER_SIZE);
+			SendUint8ToComputer(image_b, IMAGE_BUFFER_SIZE);
 		}
 		//invert the bool
-		send_to_computer = !send_to_computer;
+		send_to_computer = !send_to_computer;*/
 
     }
 }
