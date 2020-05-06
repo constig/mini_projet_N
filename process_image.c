@@ -13,151 +13,14 @@ static uint8_t color = NO_COLOR;
 //semaphore
 static BSEMAPHORE_DECL(image_ready_sem, TRUE);
 
-/*
- *  Returns the line's width extracted from the image buffer given
- *  Returns 0 if line not found
- */
 
-/*uint16_t extract_line_width(uint8_t *buffer){
-
-	uint16_t i = 0, begin = 0, end = 0, width = 0;
-	uint8_t stop = 0, wrong_line = 0, line_not_found = 0;
-	uint32_t mean = 0;
-	uint16_t low_mean = 0, high_mean = 0;
-
-	static uint16_t last_width = PXTOCM/GOAL_DISTANCE;
-
-	//performs an average
-	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
-		mean += buffer[i];
-	}
-	mean /= IMAGE_BUFFER_SIZE;
-
-	low_mean = mean * 7;
-	high_mean = mean * 13;
-
-	do{
-		wrong_line = 0;
-		//search for a begin
-		while(stop == 0 && i < (IMAGE_BUFFER_SIZE - WIDTH_SLOPE))
-		{ 
-			//the slope must at least be WIDTH_SLOPE wide and is compared
-		    //to the mean of the image
-
-		    if(10*buffer[i] < low_mean && 10*buffer[i+WIDTH_SLOPE] > high_mean)
-		    {
-		        begin = i;
-		        stop = 1;
-		    }
-		    i++;
-		}
-		//if a begin was found, search for an end
-		if (i < (IMAGE_BUFFER_SIZE - WIDTH_SLOPE) && begin)
-		{
-		    stop = 0;
-		    
-		    while(stop == 0 && i < IMAGE_BUFFER_SIZE)
-		    {
-		        if(10*buffer[i] < low_mean && 10*buffer[i-WIDTH_SLOPE] > high_mean)
-		        {
-		            end = i;
-		            stop = 1;
-		        }
-		        i++;
-		    }
-		    //if an end was not found
-		    if (i > IMAGE_BUFFER_SIZE || !end)
-		    {
-		        line_not_found = 1;
-		    }
-		}
-		else//if no begin was found
-		{
-		    line_not_found = 1;
-		}
-
-		//if a line too small has been detected, continues the search
-		if(!line_not_found && (end-begin) < MIN_LINE_WIDTH){
-			i = end;
-			begin = 0;
-			end = 0;
-			stop = 0;
-			wrong_line = 1;
-		}
-	}while(wrong_line);
-
-	if(line_not_found){
-		begin = 0;
-		end = 0;
-		//width = last_width;
-		width = 0;
-	}else{
-		last_width = width = (end - begin);
-		line_position = (begin + end)/2; //gives the line position.
-	}
-
-	//sets a maximum width or returns the measured width
-	if((PXTOCM/width) > MAX_DISTANCE){
-		//return PXTOCM/MAX_DISTANCE;
-		return 0;
-	}else{
-		return width;
-	}
-}*/
-
-uint16_t extract_line_width_b(uint8_t *buffer){
+bool extract_line_width_b(uint8_t *buffer){
 
 	uint32_t mean = 0;
 	uint16_t high_mean = 0;
 	int sommation = 0;
 	int sommation_s = 0; //sum of the sides
-
-
-	//performs an average
-	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
-		mean += buffer[i];
-	}
-
-
-	mean /= IMAGE_BUFFER_SIZE;
-	high_mean = 14*mean;
-
-
-	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
-		if(10*buffer[i] > high_mean){
-			buffer[i] = 25;
-		}
-		else{
-			buffer[i] = 0;
-		}
-	}
-
-	for(uint16_t i = 250 ; i < 450 ; i++){
-		sommation += buffer[i];
-	}
-
-	for(uint16_t i = 0 ; i < 250 ; i++){
-		sommation_s += buffer[i];
-	}
-	for(uint16_t i = 450 ; i < IMAGE_BUFFER_SIZE; i++){
-		sommation_s += buffer[i];
-	}
-
-	if((sommation > 3500) && (sommation_s < 4000)){ //180 hautes valeurs
-		return 400;
-	}
-	else{
-		return 0;
-	}
-}
-
-uint16_t extract_line_width_r(uint8_t *buffer){
-
-	uint32_t mean = 0;
-	uint16_t high_mean = 0;
-	int sommation = 0;
-	int sommation_s = 0; //sum of the sides
-
+	bool consecutive_lines = false;
 
 	//performs an average
 	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
@@ -171,38 +34,47 @@ uint16_t extract_line_width_r(uint8_t *buffer){
 
 	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
 		if(10*buffer[i] > high_mean){
-			buffer[i] = 25;
+			buffer[i] = 1;
 		}
 		else{
 			buffer[i] = 0;
 		}
 	}
 
-	for(uint16_t i = 250 ; i < 450 ; i++){
-		sommation += buffer[i];
+	for(uint16_t i = 100 ; i < 500 ; i++){
+		if (buffer[i] == 1){
+			sommation += buffer[i];
+		}
+		else{
+			sommation = 0;
+		}
+		if (sommation > 40){
+			consecutive_lines = 1;
+		}
 	}
 
-	for(uint16_t i = 0 ; i < 250 ; i++){
+	for(uint16_t i = 0 ; i < 50 ; i++){
 		sommation_s += buffer[i];
 	}
-	for(uint16_t i = 450 ; i < IMAGE_BUFFER_SIZE; i++){
+	for(uint16_t i = 590 ; i < IMAGE_BUFFER_SIZE; i++){
 		sommation_s += buffer[i];
 	}
 
-	if((sommation > 3500) && (sommation_s < 4000)){ //180 hautes valeurs
-		return 400;
+	if((consecutive_lines) && (sommation_s < 20)){
+		return true;
 	}
 	else{
-		return 0;
+		return false;
 	}
 }
 
-uint16_t extract_line_width_g(uint8_t *buffer){
+bool extract_line_width_r(uint8_t *buffer){
 
 	uint32_t mean = 0;
 	uint16_t high_mean = 0;
 	int sommation = 0;
-	int sommation_s = 0;
+	int sommation_s = 0; //=0 if wrong color
+	bool consecutive_lines = false;
 
 	//performs an average
 	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
@@ -211,34 +83,80 @@ uint16_t extract_line_width_g(uint8_t *buffer){
 
 
 	mean /= IMAGE_BUFFER_SIZE;
-	high_mean = 12*mean;
+	high_mean = 13*mean;
 
 
 	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
 		if(10*buffer[i] > high_mean){
-			buffer[i] = 25;
+			buffer[i] = 1;
 		}
 		else{
 			buffer[i] = 0;
 		}
 	}
 
-	for(uint16_t i = 250 ; i < 450 ; i++){
+	for(uint16_t i = 100 ; i < 500 ; i++){
+		if (buffer[i] == 1){
+			sommation += buffer[i];
+		}
+		else{
+			sommation = 0;
+		}
+		if (sommation > 100){
+			consecutive_lines = true;
+		}
+	}
+
+	for(uint16_t i = 0 ; i < 50 ; i++){
+		sommation_s += buffer[i];
+	}
+	for(uint16_t i = 590 ; i < IMAGE_BUFFER_SIZE; i++){
+		sommation_s += buffer[i];
+	}
+
+	if((consecutive_lines) && (sommation_s < 8)){ //180 hautes valeurs
+		return true;
+	}
+	else{
+		return false;
+	}
+}
+
+bool extract_line_width_g(uint8_t *buffer){
+
+	uint32_t mean = 0;
+	uint16_t high_mean = 0;
+	int sommation = 0;
+
+	//performs an average
+	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
+		mean += buffer[i];
+	}
+
+
+	mean /= IMAGE_BUFFER_SIZE;
+	high_mean = 13*mean;
+
+
+	for(uint16_t i = 0 ; i < IMAGE_BUFFER_SIZE ; i++){
+		if(10*buffer[i] > high_mean){
+			buffer[i] = 1;
+		}
+		else{
+			buffer[i] = 0;
+		}
+	}
+
+	for(uint16_t i = 100 ; i < 500 ; i++){
 		sommation += buffer[i];
 	}
 
-	for(uint16_t i = 0 ; i < 250 ; i++){
-		sommation_s += buffer[i];
-	}
-	for(uint16_t i = 450 ; i < IMAGE_BUFFER_SIZE; i++){
-		sommation_s += buffer[i];
-	}
 
-	if((sommation > 1500) && (sommation_s < 5000)){ //180 hautes valeurs
-		return 400;
+	if(sommation > 80){ //180 hautes valeurs
+		return true;
 	}
 	else{
-		return 0;
+		return false;
 	}
 }
 
@@ -278,9 +196,9 @@ static THD_FUNCTION(ProcessImage, arg) {
 	uint8_t image_g[IMAGE_BUFFER_SIZE] = {0};//green
 
 	bool send_to_computer = true;
-	uint16_t red = 0;
-	uint16_t blue = 0;
-	uint16_t green = 0;
+	bool red = 0;
+	bool blue = 0;
+	bool green = 0;
 	uint16_t count_r = 0;
 	uint16_t count_b = 0;
 	uint16_t count_g = 0;
@@ -300,7 +218,7 @@ static THD_FUNCTION(ProcessImage, arg) {
 			//image_g[i/2] = ((uint8_t)(img_buff_ptr[i]&0X07)<<3)|((uint8_t)(img_buff_ptr[i+1]&0XE0)>>5); //extract green pixels
 		}
 
-		red = extract_line_width_r(image_r);
+		//red = extract_line_width_r(image_r);
 		blue = extract_line_width_b(image_b);
 		green = extract_line_width_g(image_g);
 
@@ -341,7 +259,7 @@ static THD_FUNCTION(ProcessImage, arg) {
 
 		if((!red) && (!blue) && ((!green))){
 			count_w++;
-			if(count_w >= 10){
+			if(count_w >= 30){
 				color = NO_COLOR;
 				count_r = 0;
 				count_b = 0;
@@ -352,10 +270,10 @@ static THD_FUNCTION(ProcessImage, arg) {
 
 		test++;
 
-		if(test>20){
+		/*if(test>20){
 			chprintf((BaseSequentialStream *)&SDU1, "couleur: %d \r \n ", color);
 			test = 0;
-		}
+		}*/
 
 		//int count_r=0;
 		//int count_r=0;
@@ -387,12 +305,12 @@ static THD_FUNCTION(ProcessImage, arg) {
 		//lineWidth = extract_line_width(image);
 
 
-		/*if(send_to_computer){
+		if(send_to_computer){
 			//sends to the computer the image
-			SendUint8ToComputer(image_b, IMAGE_BUFFER_SIZE);
+			SendUint8ToComputer(image_r, IMAGE_BUFFER_SIZE);
 		}
 		//invert the bool
-		send_to_computer = !send_to_computer;*/
+		send_to_computer = !send_to_computer;
 
     }
 }

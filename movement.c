@@ -37,11 +37,15 @@ static THD_FUNCTION(Movement, arg) {
 	int compare_diagonal_left;
 
 	uint8_t intersection = NO_INTERSECTION;
-	uint8_t color = NO_COLOR;
+	uint8_t wall_color = NO_COLOR; //detects when there is a wall and a pannels
+	uint8_t color_2 = NO_COLOR; //color of intersections (only pannels)
+	uint8_t color_3 = NO_COLOR; //color specific to the red (to remain the color seen before)
+
 
     while(1){
 
     		time = chVTGetSystemTime();
+    		speed = SPEED;
 
         //gets the values for each sensors
     		capt_diagonal_right = get_calibrated_prox(1);
@@ -57,6 +61,7 @@ static THD_FUNCTION(Movement, arg) {
 		compare_diagonal_left = capt_diagonal_left - GOAL_DISTANCE_D;
 
 		//regulator : computes the speed correction
+
 		if(compare_diagonal_right > SMALL_DIFF_DIAG){ //too close to the right wall
 			if(compare_left > SMALL_DIFF_SIDE){
 				speed_correction = -COEFF1*compare_left; //correction proportional to the difference
@@ -89,11 +94,17 @@ static THD_FUNCTION(Movement, arg) {
 		//detection of a wall and its color (white=wall, color = traffic sign)
 		if((capt_front_TOF < MID_DIST_TOF) && (capt_front_TOF > MINI_DIST_TOF)){
 			speed = COEFF2*capt_front_TOF;
-			speed_correction = NO_CORRECTION;
-			//color = get_color();
+			//speed_correction = NO_CORRECTION;
+			if((capt_front_TOF > 85) && (capt_front_TOF < 100)){
+				wall_color = get_color();
+			}
+			if(capt_front_TOF < 70){
+				speed_correction = NO_CORRECTION;
+			}
+
 		}
 
-		if((capt_front_TOF <= SMALL_DIST_TOF) && (capt_right < WALL_FAR) && (capt_left > WALL_CLOSE)){//only choice is right
+		if((capt_front_TOF <= 50) && (capt_right < WALL_FAR) && (capt_left > WALL_CLOSE)){//only choice is right
 			intersection = INTERSECTION_R;
 		}
 
@@ -101,7 +112,7 @@ static THD_FUNCTION(Movement, arg) {
 			intersection = INTERSECTION_L;
 		}
 
-		if((capt_front_TOF <= SMALL_DIST_TOF) && (capt_right > WALL_CLOSE) && (capt_left > WALL_CLOSE)){//wall (continue or turn back)
+		if((capt_front_TOF <= 50) && (capt_right > WALL_CLOSE) && (capt_left > WALL_CLOSE)){//wall (continue or turn back)
 				intersection = WALL_COLOR;
 		}
 
@@ -135,39 +146,42 @@ static THD_FUNCTION(Movement, arg) {
 			right_motor_set_speed(-SPEED1);
 			left_motor_set_speed(SPEED3);
 			chThdSleepUntilWindowed(time, time + MS2ST(1000));
-			right_motor_set_speed(SPEED3);
-			left_motor_set_speed(SPEED3);
-			chThdSleepUntilWindowed(time, time + MS2ST(2000));
+			right_motor_set_speed(SPEED);
+			left_motor_set_speed(SPEED);
+			chThdSleepUntilWindowed(time, time + MS2ST(1600));
 			intersection = NO_INTERSECTION;
-			color = NO_COLOR;
 		}
 
 		else if(intersection == INTERSECTION_L){ //only choice is left
 			right_motor_set_speed(SPEED3);
 			left_motor_set_speed(-SPEED1);
 			chThdSleepUntilWindowed(time, time + MS2ST(1000));
-			right_motor_set_speed(SPEED3);
-			left_motor_set_speed(SPEED3);
-			chThdSleepUntilWindowed(time, time + MS2ST(2000));
+			right_motor_set_speed(SPEED);
+			left_motor_set_speed(SPEED);
+			chThdSleepUntilWindowed(time, time + MS2ST(1600));
 			intersection = NO_INTERSECTION;
-			color = NO_COLOR;
 		}
 
 		else if(intersection == WALL_COLOR){ //obstacle
-			if(color){ //traffic sign
-				if(color == RED){ //stop sign : stops for 2sec
+			if(wall_color != RED){
+				color_2 = wall_color;
+			}
+			color_3 = wall_color;
+			if(color_3){ //traffic sign
+				if(color_3 == RED){ //stop sign : stops for 2sec
 					right_motor_set_speed(SPEED0);
 					left_motor_set_speed(SPEED0);
 					chThdSleepUntilWindowed(time, time + MS2ST(2000));
-					right_motor_set_speed(SPEED3);
-					left_motor_set_speed(SPEED3);
-					chThdSleepUntilWindowed(time, time + MS2ST(5000));
-					color = NO_COLOR;
+					right_motor_set_speed(SPEED);
+					left_motor_set_speed(SPEED);
+					chThdSleepUntilWindowed(time, time + MS2ST(3300));
+					intersection = NO_INTERSECTION;
 				}
 				else{ //other colors:continues and memorizes the color
-					right_motor_set_speed(SPEED3);
-					left_motor_set_speed(SPEED3);
-					chThdSleepUntilWindowed(time, time + MS2ST(3000));
+					right_motor_set_speed(SPEED);
+					left_motor_set_speed(SPEED);
+					chThdSleepUntilWindowed(time, time + MS2ST(700));
+					intersection = NO_INTERSECTION;
 				}
 			}
 			else{ //if white return
@@ -179,7 +193,7 @@ static THD_FUNCTION(Movement, arg) {
 		}
 
 		else if(intersection == INTERSECTION_RL){ //choice between right and left (right by default)
-			if(color == BLUE){ //goes left
+			if(color_2 == BLUE){ //goes left
 				right_motor_set_speed(SPEED3);
 				left_motor_set_speed(-SPEED1);
 				chThdSleepUntilWindowed(time, time + MS2ST(1000));
@@ -189,11 +203,11 @@ static THD_FUNCTION(Movement, arg) {
 				left_motor_set_speed(SPEED3);
 				chThdSleepUntilWindowed(time, time + MS2ST(1000));
 			}
-			right_motor_set_speed(SPEED3);
-			left_motor_set_speed(SPEED3);
-			chThdSleepUntilWindowed(time, time + MS2ST(2000));
+			right_motor_set_speed(SPEED);
+			left_motor_set_speed(SPEED);
+			chThdSleepUntilWindowed(time, time + MS2ST(1700));
 			intersection = NO_INTERSECTION;
-			color = NO_COLOR;
+			color_2 = NO_COLOR;
 		}
 
 		else if(intersection == INTERSECTION_RF){ //choice between right and front (right by default)
@@ -201,7 +215,7 @@ static THD_FUNCTION(Movement, arg) {
 			left_motor_set_speed(SPEED1);
 			chThdSleepUntilWindowed(time, time + MS2ST(700));
 
-			if(color == GREEN){ //goes front
+			if(color_2 == GREEN){ //goes front
 				right_motor_set_speed(SPEED3);
 				left_motor_set_speed(SPEED3);
 				chThdSleepUntilWindowed(time, time + MS2ST(1700));
@@ -211,18 +225,18 @@ static THD_FUNCTION(Movement, arg) {
 				left_motor_set_speed(SPEED3);
 				chThdSleepUntilWindowed(time, time + MS2ST(1700));
 			}
-			right_motor_set_speed(SPEED3);
-			left_motor_set_speed(SPEED3);
-			chThdSleepUntilWindowed(time, time + MS2ST(3000));
+			right_motor_set_speed(SPEED);
+			left_motor_set_speed(SPEED);
+			chThdSleepUntilWindowed(time, time + MS2ST(2400));
 			intersection = NO_INTERSECTION;
-			color = NO_COLOR;
+			color_2 = NO_COLOR;
 		}
 
 		else if(intersection == INTERSECTION_FL){ //choice between front and left (front by default)
 			right_motor_set_speed(SPEED1);
 			left_motor_set_speed(SPEED1);
 			chThdSleepUntilWindowed(time, time + MS2ST(700));
-			if(color == BLUE){ //goes left
+			if(color_2 == BLUE){ //goes left
 				right_motor_set_speed(SPEED3);
 				left_motor_set_speed(-SPEED1);
 				chThdSleepUntilWindowed(time, time + MS2ST(1700));
@@ -232,23 +246,23 @@ static THD_FUNCTION(Movement, arg) {
 				left_motor_set_speed(SPEED3);
 				chThdSleepUntilWindowed(time, time + MS2ST(1700));
 			}
-			right_motor_set_speed(SPEED3);
-			left_motor_set_speed(SPEED3);
-			chThdSleepUntilWindowed(time, time + MS2ST(3000));
+			right_motor_set_speed(SPEED);
+			left_motor_set_speed(SPEED);
+			chThdSleepUntilWindowed(time, time + MS2ST(2400));
 			intersection = NO_INTERSECTION;
-			color = NO_COLOR;
+			color_2 = NO_COLOR;
 		}
 
 		else if(intersection == INTERSECTION_RFL){ ////choice between right, front and left (right by default)
 			right_motor_set_speed(SPEED1);
 			left_motor_set_speed(SPEED1);
 			chThdSleepUntilWindowed(time, time + MS2ST(700));
-			if(color == BLUE){ //goes left
+			if(color_2 == BLUE){ //goes left
 				right_motor_set_speed(SPEED3);
 				left_motor_set_speed(-SPEED1);
 				chThdSleepUntilWindowed(time, time + MS2ST(1700));
 			}
-			else if(color == GREEN){ //goes front
+			else if(color_2 == GREEN){ //goes front
 				right_motor_set_speed(SPEED3);
 				left_motor_set_speed(SPEED3);
 				chThdSleepUntilWindowed(time, time + MS2ST(1700));
@@ -258,17 +272,15 @@ static THD_FUNCTION(Movement, arg) {
 				left_motor_set_speed(SPEED3);
 				chThdSleepUntilWindowed(time, time + MS2ST(1700));
 			}
-			right_motor_set_speed(SPEED3);
-			left_motor_set_speed(SPEED3);
-			chThdSleepUntilWindowed(time, time + MS2ST(3000));
+			right_motor_set_speed(SPEED);
+			left_motor_set_speed(SPEED);
+			chThdSleepUntilWindowed(time, time + MS2ST(2400));
 			intersection = NO_INTERSECTION;
-			color = NO_COLOR;
+			color_2 = NO_COLOR;
 		}
-
-    }
 		chThdSleepUntilWindowed(time, time + MS2ST(10)); //100Hz
+    }
 }
-
 
 
 void movement_start(void){
