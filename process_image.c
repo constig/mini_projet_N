@@ -117,7 +117,7 @@ bool extract_line_width_r(uint8_t *buffer){
 		sommation_s += buffer[i];
 	}
 
-	if((consecutive_lines) && (sommation_s < MAX_PEAKS_R)){ //180 hautes valeurs
+	if((consecutive_lines) && (sommation_s < MAX_PEAKS_R)){
 		return true;
 	}
 	else{
@@ -157,7 +157,7 @@ bool extract_line_width_g(uint8_t *buffer){
 		sommation += buffer[i];
 	}
 
-	if(sommation > CONSECUTIVE_LINES_G){ //180 hautes valeurs
+	if(sommation > CONSECUTIVE_LINES_G){
 		return true;
 	}
 	else{
@@ -192,7 +192,7 @@ static THD_FUNCTION(CaptureImage, arg) {
 /* ProcessImage thread that analyzes the image in order to
  * determine the color seen
  */
-static THD_WORKING_AREA(waProcessImage, 4096);
+static THD_WORKING_AREA(waProcessImage, 2048); //3 tab of 640 so 1920
 static THD_FUNCTION(ProcessImage, arg) {
 
     chRegSetThreadName(__FUNCTION__);
@@ -203,7 +203,6 @@ static THD_FUNCTION(ProcessImage, arg) {
 	uint8_t image_b[IMAGE_BUFFER_SIZE] = {0};//blue
 	uint8_t image_g[IMAGE_BUFFER_SIZE] = {0};//green
 
-	bool send_to_computer = true;
 	bool red = false;
 	bool blue = false;
 	bool green = false;
@@ -274,13 +273,6 @@ static THD_FUNCTION(ProcessImage, arg) {
 				count_w = INIT;
 			}
 		}
-
-		if(send_to_computer){
-			//sends to the computer the image
-			SendUint8ToComputer(image_r, IMAGE_BUFFER_SIZE);
-		}
-		//invert the bool
-		send_to_computer = !send_to_computer;
     }
 }
 
